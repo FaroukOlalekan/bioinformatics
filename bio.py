@@ -192,9 +192,24 @@ def run_blast(sequence_id, sequence):
 
     try:
 
+                sequence_type = detect_type(sequence)
+
+        if sequence_type == "DNA":
+            program = "blastn"
+            database = "nt"
+
+        elif sequence_type == "RNA":
+            program = "blastn"
+            database = "nt"
+            sequence = sequence.replace("U", "T")
+
+        else:
+            program = "blastp"
+            database = "nr"
+
         result_handle = NCBIWWW.qblast(
-            "blastn",
-            "nt",
+            program,
+            database,
             sequence
         )
 
@@ -220,6 +235,7 @@ def run_blast(sequence_id, sequence):
 
         st.error(f"BLAST Error: {e}")
         return []
+
 
 
 # ==========================================
