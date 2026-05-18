@@ -16,7 +16,6 @@ st.set_page_config(page_title="Bioinformatics Pipeline", layout="wide")
 st.title("🧬 Bioinformatics Pipeline System")
 st.write("Simple DNA, RNA, and Protein analysis pipeline")
 
-st.info("Run this application using: streamlit run app.py")
 
 
 # ==========================================
