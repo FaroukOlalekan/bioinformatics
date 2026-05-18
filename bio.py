@@ -590,9 +590,12 @@ else:
 # FOOTER
 # ======================================================
 
+
+
+
 st.markdown("""
 ---
-### 👨‍💻 Developed by Farouk
+### 👨‍💻 Developed by Farouk Olalekan
 
 Multi-Omics Bioinformatics Pipeline System
 """)
