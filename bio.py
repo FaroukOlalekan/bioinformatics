@@ -87,7 +87,7 @@ Analyze DNA, RNA, and Protein FASTA files with:
 - Interactive Bioinformatics Questions
 """)
 
-st.info("Run locally using: streamlit run app.py")
+
 
 # ======================================================
 # CODON TABLE
