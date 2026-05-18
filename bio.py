@@ -4,31 +4,25 @@
 # ==========================================
 
 import streamlit as st
+from io import StringIO
+from Bio.Blast import NCBIWWW
+from Bio.Blast import NCBIXML
 import pandas as pd
 import matplotlib.pyplot as plt
 from Bio import SeqIO
 from collections import Counter
-from io import StringIO
 import math
 
 # ---------------- PAGE ----------------
-st.set_page_config(
-    page_title="Bioinformatics Pipeline",
-    layout="wide"
-)
-# ==========================================
-# CUSTOM STYLING
-# ==========================================
 
 st.markdown("""
 <style>
-
 .stApp {
     background: linear-gradient(to right, #0f172a, #1e293b);
     color: #f8fafc;
 }
 
-h1, h2, h3, h4, h5, h6 {
+h1, h2, h3 {
     color: #38bdf8;
 }
 
@@ -36,16 +30,10 @@ p, label, div {
     color: #e2e8f0;
 }
 
-[data-testid="stSidebar"] {
-    background-color: #111827;
-}
-
 .stButton>button {
     background-color: #38bdf8;
     color: black;
-    border-radius: 10px;
-    border: none;
-    padding: 0.5rem 1rem;
+    border-radius: 8px;
     font-weight: bold;
 }
 
@@ -53,29 +41,15 @@ p, label, div {
     background-color: #0ea5e9;
     color: white;
 }
-
-.stTextInput>div>div>input {
-    background-color: #1e293b;
-    color: white;
-}
-
-.stFileUploader {
-    background-color: #1e293b;
-    border-radius: 10px;
-    padding: 10px;
-}
-
 </style>
 """, unsafe_allow_html=True)
 
-# ==========================================
-# TITLE
-# ==========================================
-st.title("🧬 Bioinformatics Pipeline System")
-st.write(
-    "DNA, RNA, and Protein analysis platform with ORF detection, translation, GC analysis, and QC metrics."
-)
+st.set_page_config(page_title="Bioinformatics Pipeline", layout="wide")
 
+st.title("🧬 Bioinformatics Pipeline System")
+st.write("Simple DNA, RNA, and Protein analysis pipeline")
+
+st.info("Run this application using: streamlit run app.py")
 
 
 # ==========================================
@@ -193,31 +167,63 @@ def entropy(seq):
 # ==========================================
 
 def load_fasta(file):
-
     ids = []
     sequences = []
 
     try:
-
-        fasta_text = StringIO(
-            file.getvalue().decode("utf-8")
-        )
+        fasta_text = StringIO(file.getvalue().decode("utf-8"))
 
         for record in SeqIO.parse(fasta_text, "fasta"):
-
             ids.append(record.id)
             sequences.append(str(record.seq).upper())
 
         return ids, sequences
 
     except Exception as e:
-
         st.error(f"FASTA parsing error: {e}")
         return [], []
 
 
 # ==========================================
-# PIPELINE CLASS
+# BLAST SEARCH
+# ==========================================
+
+def run_blast(sequence_id, sequence):
+
+    try:
+
+        result_handle = NCBIWWW.qblast(
+            "blastn",
+            "nt",
+            sequence
+        )
+
+        blast_record = NCBIXML.read(result_handle)
+
+        results = []
+
+        for alignment in blast_record.alignments[:10]:
+
+            for hsp in alignment.hsps[:1]:
+
+                results.append({
+                    "Query": sequence_id,
+                    "Title": alignment.title,
+                    "Length": alignment.length,
+                    "E-Value": hsp.expect,
+                    "Score": hsp.score
+                })
+
+        return results
+
+    except Exception as e:
+
+        st.error(f"BLAST Error: {e}")
+        return []
+
+
+# ==========================================
+# PIPELINE ENGINE
 # ==========================================
 
 class Pipeline:
@@ -226,37 +232,25 @@ class Pipeline:
         self.sequences = sequences
 
     def qc(self):
-
         return {
             "Total Sequences": len(self.sequences),
-            "Average Length": round(
-                sum(len(s) for s in self.sequences) / len(self.sequences),
-                2
-            ),
+            "Average Length": round(sum(len(s) for s in self.sequences) / len(self.sequences), 2),
             "Max Length": max(len(s) for s in self.sequences),
             "Min Length": min(len(s) for s in self.sequences)
         }
 
     def gc_analysis(self):
-
-        values = [
-            gc_content(s)
-            for s in self.sequences
-            if detect_type(s) != "PROTEIN"
-        ]
+        values = [gc_content(s) for s in self.sequences if detect_type(s) != "PROTEIN"]
 
         return {
-            "Average GC": round(sum(values) / len(values), 2)
-            if values else 0,
+            "Average GC": round(sum(values)/len(values), 2) if values else 0,
             "Values": values
         }
 
     def orf_analysis(self):
-
         results = []
 
         for seq in self.sequences:
-
             if detect_type(seq) == "DNA":
                 results.extend(find_orfs(seq))
 
@@ -264,162 +258,130 @@ class Pipeline:
 
 
 # ==========================================
-# FILE UPLOAD
+# UI
 # ==========================================
 
 uploaded = st.file_uploader(
-    "📂 Upload FASTA File",
+    "Upload FASTA file",
     type=["fasta", "fa", "faa", "fna"]
 )
 
 question = st.text_input(
-    "❓ Ask Pipeline Question",
-    placeholder="GC analysis? ORFs? Longest sequence?"
+    "Ask pipeline question",
+    placeholder="GC? ORF? longest? protein?"
 )
-
-# ==========================================
-# MAIN APPLICATION
-# ==========================================
 
 if uploaded:
 
     ids, sequences = load_fasta(uploaded)
 
-    if sequences:
+    pipeline = Pipeline(sequences)
 
-        pipeline = Pipeline(sequences)
+    # ---------------- TABLE ----------------
+    st.subheader("📄 Sequence Summary")
 
-        # ---------------- TABLE ----------------
+    table = pd.DataFrame({
+        "ID": ids,
+        "Type": [detect_type(s) for s in sequences],
+        "Length": [len(s) for s in sequences],
+        "GC%": [gc_content(s) if detect_type(s) != "PROTEIN" else None for s in sequences]
+    })
 
-        st.subheader("📄 Sequence Summary")
+    st.dataframe(table)
 
-        table = pd.DataFrame({
+    # ---------------- QC ----------------
+    st.subheader("🧪 QC Metrics")
+    qc = pipeline.qc()
+    st.json(qc)
 
-            "ID": ids,
+    # ---------------- GC ----------------
+    st.subheader("🧬 GC Analysis")
+    gc = pipeline.gc_analysis()
+    st.json(gc)
 
-            "Type": [
-                detect_type(s)
-                for s in sequences
-            ],
+    fig, ax = plt.subplots()
+    ax.hist(gc["Values"], bins=10)
+    ax.set_xlabel("GC %")
+    ax.set_ylabel("Frequency")
+    st.pyplot(fig)
 
-            "Length": [
-                len(s)
-                for s in sequences
-            ],
+    # ---------------- ORF ----------------
+    st.subheader("🧬 ORF Detection")
+    orfs = pipeline.orf_analysis()
 
-            "GC%": [
-                gc_content(s)
-                if detect_type(s) != "PROTEIN"
-                else None
-                for s in sequences
-            ],
+    if orfs:
+        st.write(f"Detected {len(orfs)} ORFs")
+        st.code(orfs[:5])
+    else:
+        st.write("No ORFs detected")
 
-            "Entropy": [
-                entropy(s)
-                for s in sequences
-            ]
+    # ---------------- BLAST ----------------
+    st.subheader("🧬 BLAST Search")
 
-        })
+    blast_option = st.checkbox(
+        "Run BLAST for all DNA sequences"
+    )
 
-        st.dataframe(table)
+    if blast_option:
 
-        # ---------------- QC ----------------
+        all_results = []
 
-        st.subheader("🧪 QC Metrics")
-
-        qc = pipeline.qc()
-
-        st.json(qc)
-
-        # ---------------- GC ----------------
-
-        st.subheader("🧬 GC Analysis")
-
-        gc = pipeline.gc_analysis()
-
-        st.json(gc)
-
-        fig, ax = plt.subplots()
-
-        ax.hist(gc["Values"], bins=10)
-
-        ax.set_xlabel("GC %")
-        ax.set_ylabel("Frequency")
-
-        st.pyplot(fig)
-
-        # ---------------- ORF ----------------
-
-        st.subheader("🧬 ORF Detection")
-
-        orfs = pipeline.orf_analysis()
-
-        if orfs:
-
-            st.success(f"Detected {len(orfs)} ORFs")
-
-            st.code(orfs[:5])
-
-        else:
-
-            st.warning("No ORFs detected")
-
-        # ---------------- PROTEIN TRANSLATION ----------------
-
-        st.subheader("🧬 Protein Translation")
-
-        proteins = [
-            translate_dna(seq)
-            for seq in sequences
-            if detect_type(seq) == "DNA"
+        dna_data = [
+            (ids[i], sequences[i])
+            for i in range(len(sequences))
+            if detect_type(sequences[i]) == "DNA"
         ]
 
-        if proteins:
-            st.code(proteins[:5])
+        if dna_data:
 
-        # ---------------- Q&A ----------------
+            with st.spinner("Running BLAST for all sequences..."):
 
-        if question:
+                for seq_id, seq in dna_data:
 
-            q = question.lower()
+                    results = run_blast(seq_id, seq)
+                    all_results.extend(results)
 
-            st.subheader("🤖 Pipeline Answer")
+            if all_results:
 
-            if "gc" in q:
-
-                st.write(gc)
-
-            elif "orf" in q:
-
-                st.write(f"Detected {len(orfs)} ORFs")
-
-            elif "protein" in q:
-
-                st.write(proteins[:5])
-
-            elif "longest" in q:
-
-                longest = max(sequences, key=len)
-
-                st.write(
-                    f"Longest sequence length = {len(longest)}"
-                )
-
-            elif "entropy" in q:
-
-                st.write(table[["ID", "Entropy"]])
+                blast_df = pd.DataFrame(all_results)
+                st.dataframe(blast_df)
 
             else:
 
-                st.write(
-                    "Question not recognized."
-                )
+                st.warning("No BLAST results found")
+
+        else:
+
+            st.warning("No DNA sequences available for BLAST")
+
+    # ---------------- Q&A ----------------
+    if question:
+
+        q = question.lower()
+
+        st.subheader("🤖 Pipeline Answer")
+
+        if "gc" in q:
+            st.write(gc)
+
+        elif "orf" in q:
+            st.write(f"Detected {len(orfs)} ORFs")
+
+        elif "protein" in q:
+            proteins = [translate_dna(s) for s in sequences if detect_type(s) == "DNA"]
+            st.write(proteins[:5])
+
+        elif "longest" in q:
+            longest = max(sequences, key=len)
+            st.write(f"Longest sequence length = {len(longest)}")
+
+        else:
+            st.write("Question not recognized")
 
 else:
+    st.info("Upload FASTA sequences to start pipeline analysis")
 
-    st.info(
-        "Upload FASTA sequences to begin analysis."
-    )
+
 
 # ==========================================
 # FOOTER
